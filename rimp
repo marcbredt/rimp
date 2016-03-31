@@ -1,0 +1,320 @@
+#!/bin/bash
+
+set +x
+
+usage(){
+  echo "USAGE:    ./${0%/*}rimp DEVICE   DISKTYPE"
+  echo "EXAMPLES: ./${0%/*}rimp /dev/sr0 cd"
+  echo "          ./${0%/*}rimp /dev/sr0 dvd"
+}
+
+# check main parameters
+if [ "${#}" != "2" -o "${1}" == "" -o ! -e "${1}" ] \
+   || [ "${2}" != "cd" -a "${2}" != "dvd" ]; then 
+  usage
+  exit 5; 
+fi
+
+#################
+### PROG_OPTS ###
+#################
+
+PROG_OPTS_XMLCD="${0%/*}/rimp.xml"
+
+PROG_OPTS_TYPE="${2}"
+
+# check disk contents file
+if [ ! -f "${PROG_OPTS_XMLCD}" \
+     -o "x$(/usr/bin/file --brief --mime-type \
+              ${PROG_OPTS_XMLCD})" != "xapplication/xml" ]; then
+  echo "E: Not a valid XML file ('${PROG_OPTS_XMLCD}')"
+  usage
+  exit 6
+fi
+
+############################
+### MAIN CDPARANOIA OPTS ###
+############################
+
+CDPARANOIA_OPTS_DEVICE="${1}"
+
+CDPARANOIA_OPTS_BATCH="--batch --force-cdrom-device ${CDPARANOIA_OPTS_DEVICE}" 
+
+###############
+### PROGRAM ###
+###############
+
+echo "Please choose the disc(s) configuration(s) to use:"
+for did in $(/usr/bin/xmllint --xpath "/cds/cd[@active='y']/@id" \
+               ${PROG_OPTS_XMLCD} | /bin/sed -e 's/id="\|"$\|^ //g' \
+               -e 's/" / /g'); do
+
+  echo "[${did}]: $(/usr/bin/xmllint --xpath \
+                      "string(/cds/cd[@active='y' and @id='${did}']/@name)" \
+                      ${PROG_OPTS_XMLCD})" 
+done
+
+choice=
+while ! [[ "${choice}" =~ ^[1-9][0-9]*(,[1-9][0-9]*)*$ ]]; do
+  read -p "Enter a comma separated list: " choice
+done
+echo 
+
+echo "I: Disc(s) configuration(s) choice=${choice}"
+echo
+
+for did in ${choice//,/ }; do
+  dnm="$(/usr/bin/xmllint --xpath \
+          "string(/cds/cd[@active='y' and @id='${did}']/@name)" \
+          ${PROG_OPTS_XMLCD})"
+  echo "I: Loading disc configuration ${dnm} [${did}]"
+  echo
+
+  # while the correct disc was not found wait for the right medium to be placed
+  # an interactive read then provides the ability to change the media first and
+  # continue with confirmation afterwards
+  # to be able to continue with the outstanding disc configurations there is then
+  # some need to trap signals while executing further tasks 
+
+  verified="n"
+  while [ "x${verified}" = "xn" ]; do
+
+    echo -ne "I: Verifying present disc ... "
+    dct=$(/usr/bin/cd-info --quiet --no-tracks --no-cddb --no-vcd --no-device-info \
+                           --no-disc-mode --cdrom-device=/dev/sr0 2>/dev/null | \
+          /usr/bin/awk 'BEGIN{ s=0; }{ \
+                          if(s==0&&$0~/^TRACK/)s=1; \
+                          if(s==1&&$0~/^TRACK/)nts=$2; \
+                          if(s==1&&!($0~/^TRACK/))s=2; \
+                          if(s==3&&$0~/PERFORMER/){ \
+                            sub(/[ \t]*PERFORMER:[ \t]*/,"",$0);per=$0}; \
+                          if(s==3&&$0~/TITLE/){ \
+                            sub(/[ \t]*TITLE:[ \t]*.*-[ \t]*/,"",$0);alb=$0;} \
+                          if(s==2&&$0~/^CD-TEXT for Disc:/)s=3; \
+                          if(s==3&&$0~/^CD-TEXT for Track/)s=4; } \
+                        END{ \
+                          print ""s":"nts":"per":"alb""; }')
+ 
+    # extract disc results
+    dct_cpy="${dct}"
+    dct_ste=${dct_cpy%%:*}; dct_cpy=${dct_cpy#*:}
+    dct_nts=${dct_cpy%%:*}; dct_cpy=${dct_cpy#*:}
+    dct_per=${dct_cpy%%:*}; dct_cpy=${dct_cpy#*:}
+    dct_alb=${dct_cpy%%:*}; dct_cpy=${dct_cpy#*:}
+  
+    # get main disc configuration values
+    mdv_nts="$(/usr/bin/xmllint \
+                 --xpath "string(/cds/cd[@id='${did}']/album/tracks)" \
+                 ${PROG_OPTS_XMLCD})"
+    mdv_per="$(/usr/bin/xmllint \
+                 --xpath "string(/cds/cd[@id='${did}']/album/artist)" \
+                 ${PROG_OPTS_XMLCD})"
+    mdv_alb="$(/usr/bin/xmllint \
+                 --xpath "string(/cds/cd[@id='${did}']/album/title)" \
+                 ${PROG_OPTS_XMLCD})"
+
+    # compare them 
+    if [ "${dct_nts}" = "${mdv_nts}" -a "${dct_per}" = "${mdv_per}" \
+         -a "${dct_alb}" = "${mdv_alb}" ]; then 
+      verified="y"
+      echo -e "[ \033[0;32mok\033[0m ]"
+    else 
+      verified="n"
+      echo -e "[ \033[10;31mfailed\033[0m ]"
+    fi
+
+    # if the media could not be verified 
+    # wait for confirmation when it is in place
+    if [ "x${verified}" = "xn" ]; then 
+      # trap to be able to quit the verification loop when 
+      trap "verified='xs'; /usr/bin/xdotool key Return; \
+            echo -e 'I: Skipping verification continuing with next' \
+                    'disc configuration ...\n'; break;" SIGINT
+      inserted="n"
+      while [ "x${inserted}" = "xn" ]; do
+         echo -ne "   Please confirm with 'y' if media present in" \
+                  "${CDPARANOIA_OPTS_DEVICE}.\n   (Interpret: ${mdv_per}," \
+                  " Album: ${mdv_alb}, Tracks: ${mdv_nts}): " 
+         read inserted
+      done
+
+      # unset the trap
+      trap -- SIGINT
+    fi
+ 
+  done # while verification end
+
+  # continue with grabbing if verification was successful
+  if [ "x${verified}" = "xy" ]; then
+
+    ###############################
+    ### RUNTIME CDPARANOIA OPTS ###
+    ###############################
+
+    CDPARANOIA_OPTS_SPANFROM="$(/usr/bin/xmllint \
+      --xpath "string(/cds/cd[@id='${did}']/tracks/@spanfrom)" ${PROG_OPTS_XMLCD})"
+
+    CDPARANOIA_OPTS_SPANTO="$(/usr/bin/xmllint \
+      --xpath "string(/cds/cd[@id='${did}']/tracks/@spanto)" ${PROG_OPTS_XMLCD})"
+
+    CDPARANOIA_OPTS_SPANLIST="$(/usr/bin/xmllint \
+      --xpath "string(/cds/cd[@id='${did}']/tracks/@spanlist)" ${PROG_OPTS_XMLCD})"
+
+    # update the spanlist if it is not valid
+    if ! [[ "${CDPARANOIA_OPTS_SPANLIST}" =~ ^[1-9][0-9]*(,[1-9][0-9]*)*$ ]]; then
+      echo
+      echo "W: Invalid spanlist=${CDPARANOIA_OPTS_SPANLIST} in ${PROG_OPTS_XMLCD}"
+      CDPARANOIA_OPTS_SPANLIST="$(/usr/bin/seq ${CDPARANOIA_OPTS_SPANFROM} \
+                                    1 ${CDPARANOIA_OPTS_SPANTO} | \
+                                  /usr/bin/tr '\n' ',')"
+      CDPARANOIA_OPTS_SPANLIST=${CDPARANOIA_OPTS_SPANLIST%,}
+      echo "I: Setting spanlist=${CDPARANOIA_OPTS_SPANLIST} ..."
+      echo
+    else
+      echo
+      echo "I: Setting spanlist=${CDPARANOIA_OPTS_SPANLIST} ..."
+      echo
+    fi
+
+    ##################
+    ### ID3v2 OPTS ###
+    ##################
+
+    ID3v2_OPTS_ARTIST="$(/usr/bin/xmllint \
+      --xpath "string(/cds/cd[@id='${did}']/album/artist)" ${PROG_OPTS_XMLCD})"
+
+    ID3v2_OPTS_YEAR="$(/usr/bin/xmllint \
+      --xpath 'string(/cds/cd[@id='${did}']/album/year)' ${PROG_OPTS_XMLCD})"
+
+    ID3v2_OPTS_ALBUM="$(/usr/bin/xmllint \
+      --xpath 'string(/cds/cd[@id='${did}']/album/title)' ${PROG_OPTS_XMLCD})"
+
+    ID3v2_OPTS_GENRE="$(/usr/bin/xmllint \
+      --xpath 'string(/cds/cd[@id='${did}']/album/genre)' ${PROG_OPTS_XMLCD})"
+
+    ID3v2_OPTS_COMMENT="$(/usr/bin/xmllint \
+      --xpath 'string(/cds/cd[@id='${did}']/album/comment)' ${PROG_OPTS_XMLCD})"
+
+    ID3v2_OPTS_AMOUNT="$(/usr/bin/xmllint \
+      --xpath 'string(/cds/cd[@id='${did}']/album/tracks)' ${PROG_OPTS_XMLCD})"
+
+    ####################
+    ### STORAGE OPTS ###
+    ####################
+
+    STORAGE_OPTS="${0%/*}/${ID3v2_OPTS_ARTIST}/${ID3v2_OPTS_YEAR} - ${ID3v2_OPTS_ALBUM}"
+
+    ############
+    ### MAIN ###
+    ############
+
+    /bin/mkdir -p "${STORAGE_OPTS}" || exit 1
+
+    # loop grabbing mechanism for the track range mentioned
+    # considering the spanlist
+    for i in ${CDPARANOIA_OPTS_SPANLIST//,/ }; do
+ 
+      echo "--- Grabbing track ${i} ---"
+   
+      tracknr=$(/usr/bin/xmllint \
+        --xpath "string(/cds/cd[@id='${did}']/tracks/track[@id='${i}']/@nr)" \
+        ${PROG_OPTS_XMLCD} 2>/dev/null)
+
+      tracktitle=$(/usr/bin/xmllint \
+        --xpath "string(/cds/cd[@id='${did}']/tracks/track[@id='${i}'])" \
+        ${PROG_OPTS_XMLCD} 2>/dev/null)
+  
+      trackwav="${STORAGE_OPTS}/${tracknr}_${tracktitle// /_}.wav"
+
+      if [ "${tracknr}" != "" -a "${tracktitle}" != "" ]; then 
+
+        echo "/usr/bin/cdparanoia ${CDPARANOIA_OPTS_BATCH} ${i}-${i}" "${trackwav}"
+    
+        # record it
+        if [ "${PROG_OPTS_TYPE}" == "cd" ]; then 
+          # for cds
+          echo
+          /usr/bin/cdparanoia ${CDPARANOIA_OPTS_BATCH} ${i}-${i} "${trackwav}"
+
+          # mv it due to track prefix
+          echo "I: Moving WAV file ..."
+          /bin/mv "${STORAGE_OPTS}/"*".${tracknr}_${tracktitle// /_}.wav" "${trackwav}"
+          echo
+   
+          cdencode="$(/usr/bin/xmllint \
+            --xpath 'string(/cds/cd[@id='${did}']/@encode)' ${PROG_OPTS_XMLCD})"
+
+          if [ "x${cdencode}" = "xmp3" ]; then
+
+            # convert to mp3 (as it is a defacto standard) 
+            echo "I: Converting to MP3 ..."
+            echo "/usr/bin/ffmpeg -y -i ${trackwav} -b:a 128k -ac 2 -ar 44.1k" \
+                 "-codec:a libmp3lame -map_metadata 0:s:0 ${trackwav%.wav}.mp3"
+            /usr/bin/ffmpeg -y -i "${trackwav}" -b:a 128k -ac 2 -ar 44.1k \
+              -codec:a libmp3lame -map_metadata 0:s:0 "${trackwav%.wav}.mp3"
+            echo
+            # delete ID3v2 tags
+            echo "I: Deleting ID3v2 tags for MP3 file ..."
+            /usr/bin/id3v2 -D "${trackwav%.wav}.mp3"
+            echo
+            # set ID3v2 tags using xml informations
+            echo "I: Writing ID3v2 tags for MP3 file ..."
+            /usr/bin/id3v2 -a "${ID3v2_OPTS_ARTIST}" \
+              -A "${ID3v2_OPTS_ALBUM}" -t "${tracktitle}" \
+              -T "${tracknr}/${ID3v2_OPTS_AMOUNT}" -c "${ID3v2_OPTS_COMMENT}" \
+              -g "${ID3v2_OPTS_GENRE}" -y "${ID3v2_OPTS_YEAR}" \
+                 "${trackwav%.wav}.mp3"
+            echo
+
+          elif [ "x${cdencode}" = "xogg" ]; then
+
+            # or ogg (as its compression is better)
+            echo "I: Converting to OGG ..."
+            echo "/usr/bin/ffmpeg -y -i ${trackwav} -b:a 128k -ac 2 -ar 44.1k" \
+                 "-codec:a libvorbis -map_metadata 0:s:0 ${trackwav%.wav}.ogg"
+            /usr/bin/ffmpeg -y -i "${trackwav}" -b:a 128k -ac 2 -ar 44.1k \
+              -codec:a libvorbis -map_metadata 0:s:0 "${trackwav%.wav}.ogg"
+            echo
+            # delete ID3v2 tags
+            echo "I: Deleting ID3v2 tags for OGG file ..."
+            /usr/bin/id3v2 -D "${trackwav%.wav}.ogg"
+            echo
+            # set ID3v2 tags using xml informations
+            echo "I: Writing ID3v2 tags for OGG file ..."
+            /usr/bin/id3v2 -a "${ID3v2_OPTS_ARTIST}" \
+              -A "${ID3v2_OPTS_ALBUM}" -t "${tracktitle}" \
+              -T "${tracknr}/${ID3v2_OPTS_AMOUNT}" -c "${ID3v2_OPTS_COMMENT}" \
+              -g "${ID3v2_OPTS_GENRE}" -y "${ID3v2_OPTS_YEAR}" \
+                 "${trackwav%.wav}.ogg"
+            echo
+
+          fi
+
+          # remove wav
+          echo "I: Removing WAV file ..."
+          /bin/rm "${trackwav}"
+          echo
+
+        elif [ "${PROG_OPTS_TYPE}" == "dvd" ]; then
+          echo "I: NYI."
+          # for dvds, inspect it first
+          # mplayer -dvd-device /dev/sr1 -identify -frames 0 dvd://
+          # then record it
+          #/usr/bin/mplayer -dvd-device /dev/sr1 dvd://$TITLE -chapter $CHAPTER \
+          #  -ao pcm:file=foo.wav -vo null -vc null
+        fi
+
+      else 
+        echo "E: No track information. Skipping track ${i}."
+
+      fi
+  
+      echo "--- Finished grabbing track ${i} ---"
+      echo 
+
+    done # for spanlist end
+
+  fi
+
+done # for discs configuration end
+

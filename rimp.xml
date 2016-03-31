@@ -1,0 +1,69 @@
+<?xml version="1.0" standalone="no" ?>
+<cds>
+  <cd id="1" name="rkaiser-kopf" active="y" encode="ogg">
+    <album>
+      <artist>Roland Kaiser</artist>    
+      <title>Auf den Kopf gestellt</title>
+      <tracks>21</tracks>
+      <year>2016</year>
+      <genre>13</genre>
+      <comment />
+    </album>
+    <tracks chapter="1"
+            spanfrom="1" spanto="21" spanlist="1,2,3">
+      <track id="1" nr="01">Auf den Kopf gestellt</track>
+      <track id="2" nr="02">Brief an mich selbst</track>
+      <track id="3" nr="03">Das Beste am Leben</track>
+      <track id="4" nr="04">Hör auf dein Herz</track>
+      <track id="5" nr="05">Halt mich noch einmal fest</track>
+      <track id="6" nr="06">Ein Leben lang</track>
+      <track id="7" nr="07">Fünfundzwanzig Stunden</track>
+      <track id="8" nr="08">Applaus für deine Lügen</track>
+      <track id="9" nr="09">Kein Problem</track>
+      <track id="10" nr="10">Seiltänzerin</track>
+      <track id="11" nr="11">Ich wär so gern der andre Mann</track>
+      <track id="12" nr="12">Weil du in mir gespeichert bist</track>
+      <track id="13" nr="13">Am Morgen nach dem großen Tag</track>
+      <track id="14" nr="14">Und wenn dein Name Leila wär</track>
+      <track id="15" nr="15">Herzbeben</track>
+      <track id="16" nr="16">Das Beste am Leben</track>
+      <track id="17" nr="17">Ein Leben lang</track>
+      <track id="18" nr="18">Kein Problem</track>
+      <track id="19" nr="19">Warum hast du nicht nein gesagt</track>
+      <track id="20" nr="20">Joana</track>
+      <track id="21" nr="21">Strangers in the night</track>
+    </tracks>
+  </cd>
+  <cd id="2" name="rem-bestof" active="y" encode="mp3">
+    <album>
+      <artist>R.E.M.</artist>    
+      <title>The Best Of R.E.M.</title>
+      <tracks>18</tracks>
+      <year>2003</year>
+      <genre>13</genre>
+      <comment>.</comment>
+    </album>
+    <tracks chapter="1" 
+            spanfrom="1" spanto="18" spanlist="">
+      <track id="1" nr="01">Man On The Moon</track>
+      <track id="2" nr="02">The Great Beyond</track>
+      <track id="3" nr="03">Bad Day</track>
+      <track id="4" nr="04">Whats The Frequency Kenneth</track>
+      <track id="5" nr="05">All The Way To Reno</track>
+      <track id="6" nr="06">Loosing My Religion</track>
+      <track id="7" nr="07">E-Bow The Letter</track>
+      <track id="8" nr="08">Orange Crush</track>
+      <track id="9" nr="09">Imitation Of Life</track>
+      <track id="10" nr="10">Daysleeper</track>
+      <track id="11" nr="11">Animal</track>
+      <track id="12" nr="12">The Sidewinder sleeps tonight</track>
+      <track id="13" nr="13">Stand</track>
+      <track id="14" nr="14">Electrolight</track>
+      <track id="15" nr="15">All the right freinds</track>
+      <track id="16" nr="16">Everbody hurts</track>
+      <track id="17" nr="17">At my most beautiful</track>
+      <track id="18" nr="18">Nightswimming</track>
+    </tracks>
+  </cd>
+</cds>
+
